@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./sample_data"],
+      "allowedTools": ["read_file", "search_files"]
+    },
+    "github": {
+      "command": "github-mcp-server",
+      "args": ["--read-only"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      },
+      "allowedTools": ["get_repository_tree", "search_code"]
+    },
+    "search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      },
+      "allowedTools": ["brave_web_search", "brave_local_search"]
+    }
+  }
+}

@@ -1,0 +1,3 @@
+- Build MCP benchmark
+- Compare native MCP vs CLI MCP
+- Record tool calls and tokens
