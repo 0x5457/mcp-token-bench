@@ -4,6 +4,7 @@ import type { RunMetrics } from "../src/types.js";
 
 const baseRun = (overrides: Partial<RunMetrics>): RunMetrics => ({
   taskId: "task-a",
+  model: "gpt-4.1",
   agent: "mcp",
   runIndex: 0,
   totalTokens: 100,

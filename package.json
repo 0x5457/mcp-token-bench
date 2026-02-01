@@ -17,12 +17,16 @@
   },
   "dependencies": {
     "@openai/agents": "^0.4.4",
-    "zod": "^4.0.0"
+    "@openai/agents-extensions": "^0.4.4",
+    "@ai-sdk/anthropic": "^3.0.35",
+    "@ai-sdk/google": "^3.0.20",
+    "@ai-sdk/openai": "^3.0.25",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.13",
-    "tsx": "^4.19.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^2.1.9"
+    "vitest": "^4.0.18"
   }
 }

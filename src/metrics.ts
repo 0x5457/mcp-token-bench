@@ -8,16 +8,21 @@ const average = (values: number[]): number =>
 export const summarizeRuns = (runs: RunMetrics[]): SummaryRow[] => {
   const byTaskAgent = new Map<string, RunMetrics[]>();
   for (const run of runs) {
-    const key = `${run.taskId}::${run.agent}`;
+    const key = `${run.taskId}::${run.model}::${run.agent}`;
     const list = byTaskAgent.get(key) ?? [];
     list.push(run);
     byTaskAgent.set(key, list);
   }
 
   return Array.from(byTaskAgent.entries()).map(([key, entries]) => {
-    const [taskId, agent] = key.split("::") as [string, "mcp" | "cli"];
+    const [taskId, model, agent] = key.split("::") as [
+      string,
+      string,
+      "mcp" | "cli",
+    ];
     return {
       taskId,
+      model,
       agent,
       runs: entries.length,
       avgTotalTokens: average(entries.map((run) => run.totalTokens)),
@@ -32,18 +37,25 @@ export const summarizeRuns = (runs: RunMetrics[]): SummaryRow[] => {
 };
 
 export const summarizeDiffs = (rows: SummaryRow[]): SummaryDiff[] => {
-  const byTask = new Map<string, { mcp?: SummaryRow; cli?: SummaryRow }>();
+  const byTask = new Map<
+    string,
+    { taskId: string; model: string; mcp?: SummaryRow; cli?: SummaryRow }
+  >();
   for (const row of rows) {
-    const entry = byTask.get(row.taskId) ?? {};
+    const key = `${row.taskId}::${row.model}`;
+    const entry = byTask.get(key) ?? { taskId: row.taskId, model: row.model };
     if (row.agent === "mcp") {
       entry.mcp = row;
     } else {
       entry.cli = row;
     }
-    byTask.set(row.taskId, entry);
+    byTask.set(key, entry);
   }
 
-  const metrics: (keyof Omit<SummaryRow, "taskId" | "agent" | "runs">)[] = [
+  const metrics: (keyof Omit<
+    SummaryRow,
+    "taskId" | "agent" | "runs" | "model"
+  >)[] = [
     "avgTotalTokens",
     "avgPromptTokens",
     "avgCompletionTokens",
@@ -54,7 +66,7 @@ export const summarizeDiffs = (rows: SummaryRow[]): SummaryDiff[] => {
   ];
 
   const deltas: SummaryDiff[] = [];
-  for (const [taskId, { mcp, cli }] of byTask.entries()) {
+  for (const { taskId, model, mcp, cli } of byTask.values()) {
     if (!mcp || !cli) {
       continue;
     }
@@ -65,6 +77,7 @@ export const summarizeDiffs = (rows: SummaryRow[]): SummaryDiff[] => {
       const percentChange = mcpValue === 0 ? 0 : (delta / mcpValue) * 100;
       deltas.push({
         taskId,
+        model,
         metric,
         mcp: mcpValue,
         cli: cliValue,

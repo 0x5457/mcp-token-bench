@@ -22,7 +22,7 @@ Outputs:
 npm install
 ```
 
-Set environment variables:
+Set environment variables (or copy `.env.sample` to `.env` and fill in keys):
 
 ```bash
 export OPENAI_API_KEY=...
@@ -58,6 +58,17 @@ Optional arguments:
 npm run dev -- --runs 3 --model gpt-5-mini --tasks filesystem.read.sample,github.search.code
 ```
 
+Multi-model and AI SDK examples:
+
+```bash
+# Run multiple OpenAI models in one sweep
+npm run dev -- --models gpt-5-mini,gpt-4.1-mini
+
+# Use AI SDK (e.g. Anthropic / Google) models
+MODEL_PROVIDER=aisdk AI_SDK_PROVIDER=anthropic AI_SDK_MODELS=claude-3-5-sonnet-20241022 npm run dev
+MODEL_PROVIDER=aisdk AI_SDK_PROVIDER=google AI_SDK_MODELS=gemini-1.5-pro-latest npm run dev
+```
+
 ## Notes
 
 - The CLI agent calls exactly:
@@ -65,4 +76,3 @@ npm run dev -- --runs 3 --model gpt-5-mini --tasks filesystem.read.sample,github
 - Output is expected to be raw JSON. `NO_COLOR=1` is set to avoid ANSI noise.
 - Metrics come from `openai-agents-js` tracing/usage; no manual token estimation.
 - Retries are inferred from tool-call error spans followed by a subsequent tool call of the same name.
-

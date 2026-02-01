@@ -1,12 +1,9 @@
-import fs from "node:fs";
-import path from "node:path";
 import { getGlobalTraceProvider } from "@openai/agents";
 import type { CLIAgentRunner } from "./cliAgent.js";
-import { defaultRunsPerTask, resultsDir } from "./config.js";
+import { defaultRunsPerTask } from "./config.js";
 import type { MCPAgentRunner } from "./mcpAgent.js";
-import { summarizeDiffs, summarizeRuns } from "./metrics.js";
 import type { TraceCollector } from "./traceCollector.js";
-import type { ExperimentTask, RunMetrics, SummaryFile } from "./types.js";
+import type { ExperimentTask, RunMetrics } from "./types.js";
 
 type UsageMetrics = {
   inputTokens?: number;
@@ -20,15 +17,9 @@ type RunResult = {
   };
 };
 
-const ensureDir = (dir: string): void => {
-  fs.mkdirSync(dir, { recursive: true });
-};
-
 const nowIso = (): string => new Date().toISOString();
-
-const writeJson = (filePath: string, data: unknown): void => {
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-};
+const sanitizeLabel = (value: string): string =>
+  value.replace(/[^a-z0-9._-]+/gi, "_");
 
 export class ExperimentRunner {
   constructor(
@@ -40,36 +31,30 @@ export class ExperimentRunner {
   async run(
     tasks: ExperimentTask[],
     runsPerTask = defaultRunsPerTask,
-  ): Promise<void> {
-    ensureDir(resultsDir);
-
+    modelId = "default",
+  ): Promise<RunMetrics[]> {
     const runs: RunMetrics[] = [];
 
     for (const task of tasks) {
       for (let i = 0; i < runsPerTask; i += 1) {
-        runs.push(await this.runSingle(task, i, "mcp"));
-        runs.push(await this.runSingle(task, i, "cli"));
+        runs.push(await this.runSingle(task, i, "mcp", modelId));
+        runs.push(await this.runSingle(task, i, "cli", modelId));
       }
     }
 
-    const summary: SummaryFile = {
-      generatedAt: nowIso(),
-      runsPerTask,
-      averages: summarizeRuns(runs),
-      deltas: summarizeDiffs(summarizeRuns(runs)),
-    };
-
-    writeJson(path.join(resultsDir, "raw-results.json"), runs);
-    writeJson(path.join(resultsDir, "summary.json"), summary);
+    return runs;
   }
 
   private async runSingle(
     task: ExperimentTask,
     runIndex: number,
     agent: "mcp" | "cli",
+    modelId: string,
   ): Promise<RunMetrics> {
     const start = Date.now();
-    const workflowName = `mcp-bench:${task.id}:${agent}:run-${runIndex}`;
+    const workflowName = `mcp-bench:${task.id}:${agent}:${sanitizeLabel(
+      modelId,
+    )}:run-${runIndex}`;
 
     try {
       const result =
@@ -87,6 +72,7 @@ export class ExperimentRunner {
 
       return {
         taskId: task.id,
+        model: modelId,
         agent,
         runIndex,
         totalTokens,
@@ -105,6 +91,7 @@ export class ExperimentRunner {
       const message = error instanceof Error ? error.message : String(error);
       return {
         taskId: task.id,
+        model: modelId,
         agent,
         runIndex,
         totalTokens: 0,

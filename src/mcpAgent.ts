@@ -1,4 +1,4 @@
-import type { MCPServer } from "@openai/agents";
+import type { MCPServer, Model } from "@openai/agents";
 import {
   Agent,
   createMCPToolStaticFilter,
@@ -33,7 +33,11 @@ export class MCPAgentRunner {
   private agent: Agent;
   private servers: MCPServer[] = [];
 
-  constructor(model: string, servers: MCPServerConfig[], systemPrompt: string) {
+  constructor(
+    model: string | Model,
+    servers: MCPServerConfig[],
+    systemPrompt: string,
+  ) {
     this.servers = servers.map((server) => {
       const toolFilter = createMCPToolStaticFilter({
         allowed: server.allowedTools,

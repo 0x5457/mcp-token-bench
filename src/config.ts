@@ -25,6 +25,21 @@ export const sampleDataDir = path.resolve(process.cwd(), "sample_data");
 
 export const defaultModel = process.env.OPENAI_MODEL ?? "gpt-5-mini";
 
+const parseModelList = (value?: string): string[] => {
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+};
+
+const envModelList = parseModelList(process.env.OPENAI_MODELS);
+
+export const defaultModelList =
+  envModelList.length > 0 ? envModelList : [defaultModel];
+
 export const defaultServers: MCPServerConfig[] = [
   {
     name: "filesystem",

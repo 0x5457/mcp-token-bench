@@ -10,6 +10,7 @@ export type ExperimentTask = {
 
 export type RunMetrics = {
   taskId: string;
+  model: string;
   agent: AgentKind;
   runIndex: number;
   totalTokens: number;
@@ -26,6 +27,7 @@ export type RunMetrics = {
 
 export type SummaryRow = {
   taskId: string;
+  model: string;
   agent: AgentKind;
   runs: number;
   avgTotalTokens: number;
@@ -39,7 +41,8 @@ export type SummaryRow = {
 
 export type SummaryDiff = {
   taskId: string;
-  metric: keyof Omit<SummaryRow, "taskId" | "agent" | "runs">;
+  model: string;
+  metric: keyof Omit<SummaryRow, "taskId" | "agent" | "runs" | "model">;
   mcp: number;
   cli: number;
   delta: number;

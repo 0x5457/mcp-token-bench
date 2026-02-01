@@ -1,6 +1,7 @@
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import type {
+  Model,
   Shell,
   ShellAction,
   ShellOutputResult,
@@ -105,7 +106,7 @@ export const buildCliCommand = (
 export class CLIAgentRunner {
   private agent: Agent;
 
-  constructor(model: string, systemPrompt: string) {
+  constructor(model: string | Model, systemPrompt: string) {
     const shell = new LocalShell();
     this.agent = new Agent({
       name: "CLI MCP Agent",
