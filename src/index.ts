@@ -5,9 +5,9 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
 import {
-  addTraceProcessor,
   type Model,
   setDefaultOpenAIKey,
+  setTraceProcessors,
 } from "@openai/agents";
 import { aisdk } from "@openai/agents-extensions";
 import { CLIAgentRunner } from "./cliAgent.js";
@@ -21,7 +21,7 @@ import {
 import { ExperimentRunner } from "./experiment.js";
 import { MCPAgentRunner } from "./mcpAgent.js";
 import { summarizeDiffs, summarizeRuns } from "./metrics.js";
-import { tasks } from "./tasks.js";
+import { filterTasksByServer, tasks } from "./tasks.js";
 import { TraceCollector } from "./traceCollector.js";
 import type { RunMetrics, SummaryFile } from "./types.js";
 
@@ -171,14 +171,17 @@ const main = async (): Promise<void> => {
 
   const cliPrompt =
     systemPrompt +
-    " When using the shell tool, call mcp-cli with `call <server> <tool> <json>` and do not add any other commands.";
+    " When using the run_shell_command tool, call mcp-cli with `call <server> <tool> <json>` and do not add any other commands.";
 
   const traceCollector = new TraceCollector();
-  addTraceProcessor(traceCollector);
+  // Keep local trace metrics and avoid exporting traces to OpenAI.
+  setTraceProcessors([traceCollector]);
 
+  const serverNames = defaultServers.map((server) => server.name);
+  const availableTasks = filterTasksByServer(tasks, serverNames);
   const filteredTasks = taskFilter
-    ? tasks.filter((task) => taskFilter.includes(task.id))
-    : tasks;
+    ? availableTasks.filter((task) => taskFilter.includes(task.id))
+    : availableTasks;
 
   const allRuns: RunMetrics[] = [];
   for (const modelName of models) {

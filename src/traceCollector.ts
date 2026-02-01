@@ -96,7 +96,14 @@ export class TraceCollector implements TracingProcessor {
     const spanData =
       getRecordProp(span, "spanData") ?? getRecordProp(span, "data");
     const toJson = getRecordProp(span, "toJSON");
-    const spanJson = typeof toJson === "function" ? toJson() : undefined;
+    let spanJson: unknown;
+    if (typeof toJson === "function") {
+      try {
+        spanJson = toJson();
+      } catch {
+        spanJson = undefined;
+      }
+    }
     const error =
       getRecordProp(span, "error") ?? getRecordProp(spanJson, "error");
 

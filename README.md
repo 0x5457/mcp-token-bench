@@ -30,6 +30,8 @@ GITHUB_PERSONAL_ACCESS_TOKEN=...
 BRAVE_API_KEY=...
 ```
 
+If `GITHUB_PERSONAL_ACCESS_TOKEN` or `BRAVE_API_KEY` are missing, the matching MCP server and tasks are skipped so you can still run filesystem-only benchmarks.
+
 ## Configure MCP Servers
 
 Two configs are used:

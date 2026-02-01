@@ -7,7 +7,8 @@ import type {
   ShellOutputResult,
   ShellResult,
 } from "@openai/agents";
-import { Agent, Runner, shellTool } from "@openai/agents";
+import { Agent, Runner, tool } from "@openai/agents";
+import { z } from "zod";
 import { cliConfigPath } from "./config.js";
 import type { ExperimentTask } from "./types.js";
 
@@ -108,18 +109,38 @@ export class CLIAgentRunner {
 
   constructor(model: string | Model, systemPrompt: string) {
     const shell = new LocalShell();
+    const shellCommandTool = tool({
+      name: "run_shell_command",
+      description:
+        "Run a local shell command and return stdout, stderr, and exit status.",
+      parameters: z.object({
+        command: z.string(),
+        timeoutMs: z.number().optional(),
+        maxOutputLength: z.number().optional(),
+      }),
+      execute: async ({ command, timeoutMs, maxOutputLength }) => {
+        return shell.run({
+          commands: [command],
+          timeoutMs,
+          maxOutputLength,
+        });
+      },
+    });
     this.agent = new Agent({
       name: "CLI MCP Agent",
       instructions: systemPrompt,
       model,
-      tools: [shellTool({ shell })],
+      tools: [shellCommandTool],
     });
   }
 
   async runTask(task: ExperimentTask, workflowName: string): Promise<unknown> {
     const command = buildCliCommand(task, cliConfigPath);
 
-    const prompt = `${task.naturalLanguagePrompt}\n\nUse the shell tool to run:\n${command}`;
+    const prompt =
+      `${task.naturalLanguagePrompt}\n\n` +
+      "Use the run_shell_command tool with JSON " +
+      `{"command": "${command}"} and return only the raw JSON tool result.`;
 
     const runner = new Runner({
       workflowName,

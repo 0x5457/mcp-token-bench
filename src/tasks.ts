@@ -6,7 +6,7 @@ const githubOwner = process.env.GITHUB_OWNER || "github";
 const githubRepo = process.env.GITHUB_REPO || "github-mcp-server";
 const githubFullName = `${githubOwner}/${githubRepo}`;
 
-export const tasks: ExperimentTask[] = [
+const baseTasks = [
   {
     id: "filesystem.read.sample",
     server: "filesystem",
@@ -72,4 +72,14 @@ export const tasks: ExperimentTask[] = [
     naturalLanguagePrompt:
       "Call the MCP tool 'brave_local_search' with the provided args and return only the raw JSON tool result. Do not add any commentary or summary.",
   },
-];
+] satisfies ExperimentTask[];
+
+export const tasks: ExperimentTask[] = baseTasks;
+
+export const filterTasksByServer = (
+  allTasks: ExperimentTask[],
+  allowedServers: string[],
+): ExperimentTask[] => {
+  const allowed = new Set(allowedServers);
+  return allTasks.filter((task) => allowed.has(task.server));
+};
