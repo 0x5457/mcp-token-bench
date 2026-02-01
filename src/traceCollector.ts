@@ -1,4 +1,4 @@
-import type { Span, Trace, TracingProcessor } from "@openai/agents";
+import type { Span, SpanData, Trace, TracingProcessor } from "@openai/agents";
 
 export type TraceMetrics = {
   traceId: string;
@@ -12,44 +12,105 @@ type TraceState = TraceMetrics & {
   pendingErrorsByTool: Record<string, number>;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const getRecordProp = (value: unknown, key: string): unknown =>
+  isRecord(value) ? value[key] : undefined;
+
+const getStringProp = (value: unknown, key: string): string | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const prop = value[key];
+  return typeof prop === "string" ? prop : undefined;
+};
+
+const getTraceId = (value: unknown): string | undefined => {
+  const traceId = getRecordProp(value, "traceId");
+  if (typeof traceId === "string") {
+    return traceId;
+  }
+  if (typeof traceId === "number") {
+    return String(traceId);
+  }
+  const id = getRecordProp(value, "id");
+  if (typeof id === "string") {
+    return id;
+  }
+  if (typeof id === "number") {
+    return String(id);
+  }
+  return undefined;
+};
+
+const getSpanTraceId = (value: unknown): string | undefined => {
+  const traceId = getRecordProp(value, "traceId");
+  if (typeof traceId === "string") {
+    return traceId;
+  }
+  if (typeof traceId === "number") {
+    return String(traceId);
+  }
+  const traceIdSnake = getRecordProp(value, "trace_id");
+  if (typeof traceIdSnake === "string") {
+    return traceIdSnake;
+  }
+  if (typeof traceIdSnake === "number") {
+    return String(traceIdSnake);
+  }
+  return undefined;
+};
+
 export class TraceCollector implements TracingProcessor {
   private traces = new Map<string, TraceState>();
   private latestTraceId: string | null = null;
 
-  onTraceStart(trace: Trace): void {
-    const traceId = (trace as any).traceId ?? (trace as any).id;
+  async onTraceStart(trace: Trace): Promise<void> {
+    const traceId = getTraceId(trace);
+    if (!traceId) {
+      return;
+    }
     this.latestTraceId = traceId;
     this.traces.set(traceId, {
       traceId,
-      name: (trace as any).name,
+      name: getStringProp(trace, "name"),
       toolCallCount: 0,
       errors: 0,
       retries: 0,
-      pendingErrorsByTool: {}
+      pendingErrorsByTool: {},
     });
   }
 
-  onSpanEnd(span: Span): void {
-    const traceId = (span as any).traceId ?? (span as any).trace_id;
+  async onTraceEnd(_trace: Trace): Promise<void> {}
+
+  async onSpanStart(_span: Span<SpanData>): Promise<void> {}
+
+  async onSpanEnd(span: Span<SpanData>): Promise<void> {
+    const traceId = getSpanTraceId(span);
     const record = traceId ? this.traces.get(traceId) : undefined;
     if (!record) {
       return;
     }
 
-    const spanData = (span as any).spanData ?? (span as any).data;
-    const spanJson = typeof (span as any).toJSON === "function" ? (span as any).toJSON() : undefined;
-    const error = (span as any).error ?? spanJson?.error;
+    const spanData =
+      getRecordProp(span, "spanData") ?? getRecordProp(span, "data");
+    const toJson = getRecordProp(span, "toJSON");
+    const spanJson = typeof toJson === "function" ? toJson() : undefined;
+    const error =
+      getRecordProp(span, "error") ?? getRecordProp(spanJson, "error");
 
     if (error) {
       record.errors += 1;
     }
 
-    if (spanData?.type === "function") {
+    if (getStringProp(spanData, "type") === "function") {
       record.toolCallCount += 1;
-      const toolName = spanData?.name ?? "unknown";
+      const toolName = getStringProp(spanData, "name") ?? "unknown";
 
       if (error) {
-        record.pendingErrorsByTool[toolName] = (record.pendingErrorsByTool[toolName] ?? 0) + 1;
+        record.pendingErrorsByTool[toolName] =
+          (record.pendingErrorsByTool[toolName] ?? 0) + 1;
       } else if ((record.pendingErrorsByTool[toolName] ?? 0) > 0) {
         record.retries += 1;
         record.pendingErrorsByTool[toolName] -= 1;
@@ -69,4 +130,8 @@ export class TraceCollector implements TracingProcessor {
     const { pendingErrorsByTool: _unused, ...metrics } = record;
     return metrics;
   }
+
+  async shutdown(_timeout?: number): Promise<void> {}
+
+  async forceFlush(): Promise<void> {}
 }

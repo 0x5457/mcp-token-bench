@@ -1,12 +1,24 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getGlobalTraceProvider } from "@openai/agents";
+import type { CLIAgentRunner } from "./cliAgent.js";
 import { defaultRunsPerTask, resultsDir } from "./config.js";
-import { CLIAgentRunner } from "./cliAgent.js";
-import { MCPAgentRunner } from "./mcpAgent.js";
-import { TraceCollector } from "./traceCollector.js";
-import { ExperimentTask, RunMetrics, SummaryFile } from "./types.js";
-import { summarizeRuns, summarizeDiffs } from "./metrics.js";
+import type { MCPAgentRunner } from "./mcpAgent.js";
+import { summarizeDiffs, summarizeRuns } from "./metrics.js";
+import type { TraceCollector } from "./traceCollector.js";
+import type { ExperimentTask, RunMetrics, SummaryFile } from "./types.js";
+
+type UsageMetrics = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+};
+
+type RunResult = {
+  state?: {
+    usage?: UsageMetrics;
+  };
+};
 
 const ensureDir = (dir: string): void => {
   fs.mkdirSync(dir, { recursive: true });
@@ -22,10 +34,13 @@ export class ExperimentRunner {
   constructor(
     private readonly mcpAgent: MCPAgentRunner,
     private readonly cliAgent: CLIAgentRunner,
-    private readonly traceCollector: TraceCollector
+    private readonly traceCollector: TraceCollector,
   ) {}
 
-  async run(tasks: ExperimentTask[], runsPerTask = defaultRunsPerTask): Promise<void> {
+  async run(
+    tasks: ExperimentTask[],
+    runsPerTask = defaultRunsPerTask,
+  ): Promise<void> {
     ensureDir(resultsDir);
 
     const runs: RunMetrics[] = [];
@@ -41,14 +56,18 @@ export class ExperimentRunner {
       generatedAt: nowIso(),
       runsPerTask,
       averages: summarizeRuns(runs),
-      deltas: summarizeDiffs(summarizeRuns(runs))
+      deltas: summarizeDiffs(summarizeRuns(runs)),
     };
 
     writeJson(path.join(resultsDir, "raw-results.json"), runs);
     writeJson(path.join(resultsDir, "summary.json"), summary);
   }
 
-  private async runSingle(task: ExperimentTask, runIndex: number, agent: "mcp" | "cli"): Promise<RunMetrics> {
+  private async runSingle(
+    task: ExperimentTask,
+    runIndex: number,
+    agent: "mcp" | "cli",
+  ): Promise<RunMetrics> {
     const start = Date.now();
     const workflowName = `mcp-bench:${task.id}:${agent}:run-${runIndex}`;
 
@@ -61,7 +80,7 @@ export class ExperimentRunner {
       await getGlobalTraceProvider().forceFlush();
       const trace = this.traceCollector.consumeLatest();
 
-      const usage = (result as any)?.state?.usage ?? {};
+      const usage = (result as RunResult)?.state?.usage ?? {};
       const promptTokens = usage.inputTokens ?? 0;
       const completionTokens = usage.outputTokens ?? 0;
       const totalTokens = usage.totalTokens ?? promptTokens + completionTokens;
@@ -78,7 +97,7 @@ export class ExperimentRunner {
         errors: trace?.errors ?? 0,
         durationMs: Date.now() - start,
         timestamp: nowIso(),
-        success: true
+        success: true,
       };
     } catch (error) {
       await getGlobalTraceProvider().forceFlush();
@@ -97,7 +116,7 @@ export class ExperimentRunner {
         durationMs: Date.now() - start,
         timestamp: nowIso(),
         success: false,
-        errorMessage: message
+        errorMessage: message,
       };
     }
   }

@@ -1,7 +1,9 @@
-import { RunMetrics, SummaryDiff, SummaryRow } from "./types.js";
+import type { RunMetrics, SummaryDiff, SummaryRow } from "./types.js";
 
 const average = (values: number[]): number =>
-  values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+  values.length === 0
+    ? 0
+    : values.reduce((sum, value) => sum + value, 0) / values.length;
 
 export const summarizeRuns = (runs: RunMetrics[]): SummaryRow[] => {
   const byTaskAgent = new Map<string, RunMetrics[]>();
@@ -24,7 +26,7 @@ export const summarizeRuns = (runs: RunMetrics[]): SummaryRow[] => {
       avgToolCallCount: average(entries.map((run) => run.toolCallCount)),
       avgRetries: average(entries.map((run) => run.retries)),
       avgErrors: average(entries.map((run) => run.errors)),
-      avgDurationMs: average(entries.map((run) => run.durationMs))
+      avgDurationMs: average(entries.map((run) => run.durationMs)),
     };
   });
 };
@@ -48,7 +50,7 @@ export const summarizeDiffs = (rows: SummaryRow[]): SummaryDiff[] => {
     "avgToolCallCount",
     "avgRetries",
     "avgErrors",
-    "avgDurationMs"
+    "avgDurationMs",
   ];
 
   const deltas: SummaryDiff[] = [];
@@ -67,7 +69,7 @@ export const summarizeDiffs = (rows: SummaryRow[]): SummaryDiff[] => {
         mcp: mcpValue,
         cli: cliValue,
         delta,
-        percentChange
+        percentChange,
       });
     }
   }

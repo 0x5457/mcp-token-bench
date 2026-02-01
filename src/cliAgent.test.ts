@@ -7,7 +7,7 @@ const task: ExperimentTask = {
   server: "filesystem",
   tool: "read_file",
   args: { path: "/tmp/sample.txt" },
-  naturalLanguagePrompt: ""
+  naturalLanguagePrompt: "",
 };
 
 describe("buildCliCommand", () => {
@@ -15,7 +15,9 @@ describe("buildCliCommand", () => {
     const command = buildCliCommand(task, "/tmp/mcp_servers.json");
 
     expect(command).toContain("NO_COLOR=1");
-    expect(command).toContain("mcp-cli call -c /tmp/mcp_servers.json filesystem read_file");
-    expect(command).toContain("'{\"path\":\"/tmp/sample.txt\"}'");
+    expect(command).toContain(
+      "mcp-cli call -c /tmp/mcp_servers.json filesystem read_file",
+    );
+    expect(command).toContain('\'{"path":"/tmp/sample.txt"}\'');
   });
 });

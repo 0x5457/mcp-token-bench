@@ -1,19 +1,24 @@
+import type { MCPServer } from "@openai/agents";
 import {
   Agent,
+  createMCPToolStaticFilter,
   MCPServerStdio,
   MCPServerStreamableHttp,
-  createMCPToolStaticFilter,
-  run
+  Runner,
 } from "@openai/agents";
-import type { MCPServer } from "@openai/agents";
-import { MCPServerConfig } from "./config.js";
-import { ExperimentTask } from "./types.js";
+import type { MCPServerConfig } from "./config.js";
+import type { ExperimentTask } from "./types.js";
 
 const interpolateEnv = (value: string): string => {
-  return value.replace(/\$\{([A-Z0-9_]+)\}/gi, (_, name) => process.env[name] ?? "");
+  return value.replace(
+    /\$\{([A-Z0-9_]+)\}/gi,
+    (_, name) => process.env[name] ?? "",
+  );
 };
 
-const resolveEnvMap = (env?: Record<string, string>): Record<string, string> | undefined => {
+const resolveEnvMap = (
+  env?: Record<string, string>,
+): Record<string, string> | undefined => {
   if (!env) {
     return undefined;
   }
@@ -30,21 +35,23 @@ export class MCPAgentRunner {
 
   constructor(model: string, servers: MCPServerConfig[], systemPrompt: string) {
     this.servers = servers.map((server) => {
-      const toolFilter = createMCPToolStaticFilter({ allowed: server.allowedTools });
+      const toolFilter = createMCPToolStaticFilter({
+        allowed: server.allowedTools,
+      });
       if (server.kind === "stdio") {
         return new MCPServerStdio({
           name: server.name,
           command: server.command,
           args: server.args,
           env: resolveEnvMap(server.env),
-          toolFilter
+          toolFilter,
         });
       }
       return new MCPServerStreamableHttp({
         name: server.name,
         url: server.url,
-        headers: server.headers,
-        toolFilter
+        requestInit: server.headers ? { headers: server.headers } : undefined,
+        toolFilter,
       });
     });
 
@@ -52,7 +59,7 @@ export class MCPAgentRunner {
       name: "MCP Native Agent",
       instructions: systemPrompt,
       model,
-      mcpServers: this.servers
+      mcpServers: this.servers,
     });
   }
 
@@ -69,13 +76,14 @@ export class MCPAgentRunner {
   }
 
   async runTask(task: ExperimentTask, workflowName: string): Promise<unknown> {
-    return run(this.agent, task.naturalLanguagePrompt, {
+    const runner = new Runner({
       workflowName,
-      metadata: {
+      traceMetadata: {
         taskId: task.id,
         server: task.server,
-        tool: task.tool
-      }
+        tool: task.tool,
+      },
     });
+    return runner.run(this.agent, task.naturalLanguagePrompt);
   }
 }

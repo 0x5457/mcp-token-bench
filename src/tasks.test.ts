@@ -34,6 +34,9 @@ describe("tasks", () => {
     const tasks = await loadTasks();
     const listTask = tasks.find((task) => task.id === "github.list.repo");
 
-    expect(listTask?.args).toMatchObject({ owner: "github", repo: "github-mcp-server" });
+    expect(listTask?.args).toMatchObject({
+      owner: "github",
+      repo: "github-mcp-server",
+    });
   });
 });

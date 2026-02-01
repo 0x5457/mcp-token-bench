@@ -1,33 +1,95 @@
-import { Agent, run, shellTool } from "@openai/agents";
-import type { Shell, ShellAction, ShellResult } from "@openai/agents";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import type {
+  Shell,
+  ShellAction,
+  ShellOutputResult,
+  ShellResult,
+} from "@openai/agents";
+import { Agent, Runner, shellTool } from "@openai/agents";
 import { cliConfigPath } from "./config.js";
-import { ExperimentTask } from "./types.js";
+import type { ExperimentTask } from "./types.js";
 
 const execAsync = promisify(exec);
 
-const stripAnsi = (value: string): string =>
-  value.replace(/[\u001B\u009B][[\]()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
+const stripAnsiPattern =
+  "[\\u001B\\u009B][[\\]()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]";
+const stripAnsiRegex = new RegExp(stripAnsiPattern, "g");
+
+const stripAnsi = (value: string): string => value.replace(stripAnsiRegex, "");
 
 class LocalShell implements Shell {
   async run(action: ShellAction): Promise<ShellResult> {
-    const outputs: string[] = [];
+    const outputs: ShellOutputResult[] = [];
+    let remaining = action.maxOutputLength ?? null;
+
+    const applyLimit = (value: string): string => {
+      if (remaining === null) {
+        return value;
+      }
+      if (remaining <= 0) {
+        return "";
+      }
+      const slice = value.slice(0, remaining);
+      remaining -= slice.length;
+      return slice;
+    };
+
     for (const command of action.commands) {
-      const result = await execAsync(command, {
-        timeout: action.timeoutMs ?? 120_000,
-        maxBuffer: 8 * 1024 * 1024
-      });
-      outputs.push(result.stdout, result.stderr);
+      try {
+        const result = await execAsync(command, {
+          timeout: action.timeoutMs ?? 120_000,
+          maxBuffer: 8 * 1024 * 1024,
+        });
+        outputs.push({
+          stdout: applyLimit(stripAnsi(result.stdout)),
+          stderr: applyLimit(stripAnsi(result.stderr)),
+          outcome: { type: "exit", exitCode: 0 },
+        });
+      } catch (error) {
+        const err = error as {
+          stdout?: string;
+          stderr?: string;
+          code?: number | string | null;
+          killed?: boolean;
+          signal?: string | null;
+          message?: string;
+        };
+        const stdout = typeof err.stdout === "string" ? err.stdout : "";
+        const stderr =
+          typeof err.stderr === "string"
+            ? err.stderr
+            : err.message
+              ? err.message
+              : "";
+        const isTimeout =
+          err.killed === true ||
+          err.code === "ETIMEDOUT" ||
+          err.signal === "SIGTERM";
+        outputs.push({
+          stdout: applyLimit(stripAnsi(stdout)),
+          stderr: applyLimit(stripAnsi(stderr)),
+          outcome: isTimeout
+            ? { type: "timeout" }
+            : {
+                type: "exit",
+                exitCode: typeof err.code === "number" ? err.code : null,
+              },
+        });
+      }
     }
 
-    const combined = stripAnsi(outputs.join("")).trim();
-    const truncated = action.maxOutputLength ? combined.slice(0, action.maxOutputLength) : combined;
-    return { output: truncated };
+    return {
+      output: outputs,
+      maxOutputLength: action.maxOutputLength,
+    };
   }
 }
 
-export const buildCliCommand = (task: ExperimentTask, configPath: string): string => {
+export const buildCliCommand = (
+  task: ExperimentTask,
+  configPath: string,
+): string => {
   return [
     "NO_COLOR=1",
     "mcp-cli",
@@ -36,7 +98,7 @@ export const buildCliCommand = (task: ExperimentTask, configPath: string): strin
     configPath,
     task.server,
     task.tool,
-    `'${JSON.stringify(task.args)}'`
+    `'${JSON.stringify(task.args)}'`,
   ].join(" ");
 };
 
@@ -49,7 +111,7 @@ export class CLIAgentRunner {
       name: "CLI MCP Agent",
       instructions: systemPrompt,
       model,
-      tools: [shellTool({ shell })]
+      tools: [shellTool({ shell })],
     });
   }
 
@@ -58,13 +120,14 @@ export class CLIAgentRunner {
 
     const prompt = `${task.naturalLanguagePrompt}\n\nUse the shell tool to run:\n${command}`;
 
-    return run(this.agent, prompt, {
+    const runner = new Runner({
       workflowName,
-      metadata: {
+      traceMetadata: {
         taskId: task.id,
         server: task.server,
-        tool: task.tool
-      }
+        tool: task.tool,
+      },
     });
+    return runner.run(this.agent, prompt);
   }
 }

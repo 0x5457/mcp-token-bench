@@ -2,7 +2,11 @@
   "mcpServers": {
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./sample_data"],
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "./sample_data"
+      ],
       "allowedTools": ["read_file", "search_files"]
     },
     "github": {

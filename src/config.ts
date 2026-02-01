@@ -31,7 +31,7 @@ export const defaultServers: MCPServerConfig[] = [
     kind: "stdio",
     command: "npx",
     args: ["-y", "@modelcontextprotocol/server-filesystem", sampleDataDir],
-    allowedTools: ["read_file", "search_files"]
+    allowedTools: ["read_file", "search_files"],
   },
   {
     name: "github",
@@ -39,9 +39,10 @@ export const defaultServers: MCPServerConfig[] = [
     command: "github-mcp-server",
     args: ["--read-only"],
     env: {
-      GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      GITHUB_PERSONAL_ACCESS_TOKEN:
+        process.env.GITHUB_PERSONAL_ACCESS_TOKEN ?? "",
     },
-    allowedTools: ["get_repository_tree", "search_code"]
+    allowedTools: ["get_repository_tree", "search_code"],
   },
   {
     name: "search",
@@ -49,10 +50,10 @@ export const defaultServers: MCPServerConfig[] = [
     command: "npx",
     args: ["-y", "@modelcontextprotocol/server-brave-search"],
     env: {
-      BRAVE_API_KEY: "${BRAVE_API_KEY}"
+      BRAVE_API_KEY: process.env.BRAVE_API_KEY ?? "",
     },
-    allowedTools: ["brave_web_search", "brave_local_search"]
-  }
+    allowedTools: ["brave_web_search", "brave_local_search"],
+  },
 ];
 
 export const cliConfigPath = path.resolve(process.cwd(), "mcp_servers.json");
