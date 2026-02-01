@@ -16,11 +16,12 @@
     "preflight": "npm run format && npm run lint:fix && npm run typecheck && npm run test"
   },
   "dependencies": {
-    "@openai/agents": "^0.4.4",
-    "@openai/agents-extensions": "^0.4.4",
     "@ai-sdk/anthropic": "^3.0.35",
     "@ai-sdk/google": "^3.0.20",
     "@ai-sdk/openai": "^3.0.25",
+    "@openai/agents": "^0.4.4",
+    "@openai/agents-extensions": "^0.4.4",
+    "dotenv": "^17.2.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
