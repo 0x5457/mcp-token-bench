@@ -26,7 +26,6 @@ export const sampleDataDir = path.resolve(process.cwd(), "sample_data");
 export const defaultModel = process.env.OPENAI_MODEL ?? "gpt-5-mini";
 
 const githubToken = process.env.GITHUB_PERSONAL_ACCESS_TOKEN ?? "";
-const braveApiKey = process.env.BRAVE_API_KEY ?? "";
 
 const parseModelList = (value?: string): string[] => {
   if (!value) {
@@ -55,32 +54,29 @@ const githubServer: MCPServerConfig | null = githubToken
   ? {
       name: "github",
       kind: "stdio",
-      command: "npx",
-      args: ["-y", "github-mcp-server", "--read-only"],
+      command: "docker",
+      args: [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "-e",
+        "GITHUB_READ_ONLY",
+        "ghcr.io/github/github-mcp-server",
+      ],
       env: {
         GITHUB_PERSONAL_ACCESS_TOKEN: githubToken,
+        GITHUB_READ_ONLY: "1",
+        GITHUB_TOOLSETS: "default,git",
       },
       allowedTools: ["get_repository_tree", "search_code"],
-    }
-  : null;
-
-const searchServer: MCPServerConfig | null = braveApiKey
-  ? {
-      name: "search",
-      kind: "stdio",
-      command: "npx",
-      args: ["-y", "@modelcontextprotocol/server-brave-search"],
-      env: {
-        BRAVE_API_KEY: braveApiKey,
-      },
-      allowedTools: ["brave_web_search", "brave_local_search"],
     }
   : null;
 
 export const defaultServers: MCPServerConfig[] = [
   filesystemServer,
   ...(githubServer ? [githubServer] : []),
-  ...(searchServer ? [searchServer] : []),
 ];
 
 export const cliConfigPath = path.resolve(process.cwd(), "mcp_servers.json");

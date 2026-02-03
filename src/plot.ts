@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createCanvas, Image } from "canvas";
 import { JSDOM } from "jsdom";
-import Plotly, { type Data, type Layout } from "plotly.js";
+import type { Data, Layout } from "plotly.js";
 import { meanStd, wilsonInterval } from "./plotStats.js";
 
 type Summary = {
@@ -84,6 +84,11 @@ for (const row of raw) {
 }
 
 // JSDOM + Canvas shim for Plotly image export
+// Plotly (via d3) expects a browser-like global `self`.
+const globalShim = globalThis as GlobalShim;
+if (!("self" in globalShim)) {
+  (globalShim as Record<string, unknown>).self = globalShim;
+}
 const dom = new JSDOM("<!doctype html><html><body></body></html>");
 const { document } = dom.window;
 type GlobalShim = Omit<
@@ -102,10 +107,43 @@ type GlobalShim = Omit<
   HTMLCanvasElement?: typeof dom.window.HTMLCanvasElement;
   getComputedStyle?: typeof dom.window.getComputedStyle;
 };
-const globalShim = globalThis as GlobalShim;
 globalShim.window = dom.window;
 globalShim.document = document;
-globalShim.navigator = dom.window.navigator;
+if (!("navigator" in globalShim)) {
+  Object.defineProperty(globalShim, "navigator", {
+    value: dom.window.navigator,
+    configurable: true,
+    writable: false,
+  });
+}
+if (!("DOMParser" in globalShim)) {
+  Object.defineProperty(globalShim, "DOMParser", {
+    value: dom.window.DOMParser,
+    configurable: true,
+    writable: false,
+  });
+}
+if (!("HTMLElement" in globalShim)) {
+  Object.defineProperty(globalShim, "HTMLElement", {
+    value: dom.window.HTMLElement,
+    configurable: true,
+    writable: false,
+  });
+}
+if (!("SVGElement" in globalShim)) {
+  Object.defineProperty(globalShim, "SVGElement", {
+    value: dom.window.SVGElement,
+    configurable: true,
+    writable: false,
+  });
+}
+if (!("Element" in globalShim)) {
+  Object.defineProperty(globalShim, "Element", {
+    value: dom.window.Element,
+    configurable: true,
+    writable: false,
+  });
+}
 globalShim.Image = Image as unknown as typeof dom.window.Image;
 globalShim.HTMLCanvasElement = dom.window.HTMLCanvasElement;
 globalShim.getComputedStyle = dom.window.getComputedStyle;
@@ -121,23 +159,59 @@ document.createElement = ((
   return originalCreateElement(tagName, options);
 }) as typeof document.createElement;
 
+const PlotlyCore = (await import("plotly.js/lib/core")).default;
+const bar = (await import("plotly.js/lib/bar")).default;
+const box = (await import("plotly.js/lib/box")).default;
+PlotlyCore.register([bar, box]);
+const Plotly = PlotlyCore;
+
+const { createRequire } = await import("node:module");
+const require = createRequire(import.meta.url);
+const snapshotHelpers = require("plotly.js/src/snapshot/helpers");
+const originalCreateBlob = snapshotHelpers.createBlob;
+const originalCreateObjectURL = snapshotHelpers.createObjectURL;
+snapshotHelpers.createBlob = (url: string, format: string) => {
+  if (format === "svg") {
+    return { __svg: url, type: "image/svg+xml" };
+  }
+  return originalCreateBlob(url, format);
+};
+snapshotHelpers.createObjectURL = (blob: { __svg?: string }) => {
+  if (blob?.__svg) {
+    return snapshotHelpers.encodeSVG(blob.__svg);
+  }
+  return originalCreateObjectURL(blob);
+};
+snapshotHelpers.revokeObjectURL = () => {};
+
 const outDir = join("results", "figures");
 mkdirSync(outDir, { recursive: true });
 
-const plotToPng = async (
+const plotFormat = (process.env.PLOT_FORMAT ?? "svg").toLowerCase();
+const plotToImage = async (
   filename: string,
   data: Data[],
   layout: Partial<Layout>,
 ) => {
   const gd = document.createElement("div");
   await Plotly.newPlot(gd, data, layout, { staticPlot: true });
-  const img = (await Plotly.toImage(gd, {
-    format: "png",
-    width: 1200,
-    height: 600,
-  })) as string;
-  const base64 = img.replace(/^data:image\/png;base64,/, "");
-  writeFileSync(join(outDir, filename), base64, "base64");
+  if (plotFormat === "svg") {
+    const svg = (await Plotly.toImage(gd, {
+      format: "svg",
+      width: 1200,
+      height: 600,
+      imageDataOnly: true,
+    })) as string;
+    writeFileSync(join(outDir, filename), svg, "utf8");
+  } else {
+    const img = (await Plotly.toImage(gd, {
+      format: "png",
+      width: 1200,
+      height: 600,
+    })) as string;
+    const base64 = img.replace(/^data:image\/png;base64,/, "");
+    writeFileSync(join(outDir, filename), base64, "base64");
+  }
   Plotly.purge(gd);
 };
 
@@ -439,46 +513,62 @@ if (retriesAvailable) {
   });
 }
 
-await plotToPng(
-  "avg_duration_by_task_agent.png",
-  durationByModelTraces,
-  durationLayout,
-);
-await plotToPng(
-  "success_rate_by_task_agent.png",
-  successByModelTraces,
-  successLayout,
-);
-await plotToPng("duration_boxplot_success.png", boxTraces, {
-  title: { text: "Duration Distribution (Success Only)" },
-  margin: { t: 60, l: 60, r: 20, b: 120 },
-});
+const imgExt = plotFormat === "svg" ? "svg" : "png";
+const withExt = (name: string) => `${name}.${imgExt}`;
 
-if (tokenAvailable) {
-  await plotToPng(
-    "avg_total_tokens_by_task_agent.png",
-    tokenTraces,
-    tokenLayout,
+const run = async () => {
+  await plotToImage(
+    withExt("avg_duration_by_task_agent"),
+    durationByModelTraces,
+    durationLayout,
   );
-}
-
-if (toolCallsAvailable) {
-  await plotToPng(
-    "avg_tool_calls_by_task_agent.png",
-    toolCallTraces,
-    toolCallLayout,
+  await plotToImage(
+    withExt("success_rate_by_task_agent"),
+    successByModelTraces,
+    successLayout,
   );
-}
+  await plotToImage(withExt("duration_boxplot_success"), boxTraces, {
+    title: { text: "Duration Distribution (Success Only)" },
+    margin: { t: 60, l: 60, r: 20, b: 120 },
+  });
 
-if (retriesAvailable) {
-  await plotToPng(
-    "avg_retries_by_task_agent.png",
-    retriesTraces,
-    retriesLayout,
-  );
-}
+  if (tokenAvailable) {
+    await plotToImage(
+      withExt("avg_total_tokens_by_task_agent"),
+      tokenTraces,
+      tokenLayout,
+    );
+  }
 
-const tableCsv = buildMeanStdTable();
-writeFileSync(join(outDir, "summary_table.csv"), tableCsv, "utf8");
+  if (toolCallsAvailable) {
+    await plotToImage(
+      withExt("avg_tool_calls_by_task_agent"),
+      toolCallTraces,
+      toolCallLayout,
+    );
+  }
 
-console.log(`Wrote charts to ${outDir}`);
+  if (retriesAvailable) {
+    await plotToImage(
+      withExt("avg_retries_by_task_agent"),
+      retriesTraces,
+      retriesLayout,
+    );
+  }
+
+  const tableCsv = buildMeanStdTable();
+  writeFileSync(join(outDir, "summary_table.csv"), tableCsv, "utf8");
+
+  console.log(`Wrote charts to ${outDir}`);
+};
+
+const keepAlive = setInterval(() => {}, 1000);
+run()
+  .then(() => {
+    clearInterval(keepAlive);
+  })
+  .catch((err) => {
+    clearInterval(keepAlive);
+    console.error(err);
+    process.exitCode = 1;
+  });

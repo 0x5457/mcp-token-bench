@@ -3,7 +3,7 @@ import type { CLIAgentRunner } from "./cliAgent.js";
 import { defaultRunsPerTask } from "./config.js";
 import type { MCPAgentRunner } from "./mcpAgent.js";
 import type { TraceCollector } from "./traceCollector.js";
-import type { ExperimentTask, RunMetrics } from "./types.js";
+import type { AgentKind, ExperimentTask, RunMetrics } from "./types.js";
 
 type UsageMetrics = {
   inputTokens?: number;
@@ -17,9 +17,46 @@ type RunResult = {
   };
 };
 
+type StreamedResult = {
+  completed?: Promise<void>;
+};
+
+const awaitStreamCompletion = async (result: unknown): Promise<void> => {
+  if (!result || typeof result !== "object") {
+    return;
+  }
+  const streamed = result as StreamedResult;
+  if (streamed.completed && typeof streamed.completed.then === "function") {
+    await streamed.completed;
+  }
+};
+
 const nowIso = (): string => new Date().toISOString();
 const sanitizeLabel = (value: string): string =>
   value.replace(/[^a-z0-9._-]+/gi, "_");
+const debugEnabled = (): boolean => process.env.DEBUG_BENCH === "1";
+
+const formatError = (error: unknown): Record<string, unknown> => {
+  if (!(error instanceof Error)) {
+    return { message: String(error) };
+  }
+  const extra = error as Error & {
+    status?: number;
+    code?: string | number;
+    cause?: unknown;
+    response?: { status?: number; statusText?: string; url?: string };
+  };
+  return {
+    name: error.name,
+    message: error.message,
+    status: extra.status ?? extra.response?.status ?? null,
+    statusText: extra.response?.statusText ?? null,
+    url: extra.response?.url ?? null,
+    code: extra.code ?? null,
+    stack: error.stack ?? null,
+    cause: extra.cause ?? null,
+  };
+};
 
 export class ExperimentRunner {
   constructor(
@@ -48,7 +85,7 @@ export class ExperimentRunner {
   private async runSingle(
     task: ExperimentTask,
     runIndex: number,
-    agent: "mcp" | "cli",
+    agent: AgentKind,
     modelId: string,
   ): Promise<RunMetrics> {
     const start = Date.now();
@@ -57,10 +94,30 @@ export class ExperimentRunner {
     )}:run-${runIndex}`;
 
     try {
-      const result =
-        agent === "mcp"
-          ? await this.mcpAgent.runTask(task, workflowName)
-          : await this.cliAgent.runTask(task, workflowName);
+      if (debugEnabled()) {
+        console.log(
+          `[bench] run start`,
+          JSON.stringify(
+            {
+              taskId: task.id,
+              agent,
+              modelId,
+              workflowName,
+              server: task.server,
+              tool: task.tool,
+            },
+            null,
+            2,
+          ),
+        );
+      }
+      let result: unknown;
+      if (agent === "mcp") {
+        result = await this.mcpAgent.runTask(task, workflowName);
+      } else {
+      result = await this.cliAgent.runTask(task, workflowName);
+      }
+      await awaitStreamCompletion(result);
 
       await getGlobalTraceProvider().forceFlush();
       const trace = this.traceCollector.consumeLatest();
@@ -89,6 +146,22 @@ export class ExperimentRunner {
       await getGlobalTraceProvider().forceFlush();
       const trace = this.traceCollector.consumeLatest();
       const message = error instanceof Error ? error.message : String(error);
+      if (debugEnabled()) {
+        console.log(
+          `[bench] run error`,
+          JSON.stringify(
+            {
+              taskId: task.id,
+              agent,
+              modelId,
+              workflowName,
+              error: formatError(error),
+            },
+            null,
+            2,
+          ),
+        );
+      }
       return {
         taskId: task.id,
         model: modelId,

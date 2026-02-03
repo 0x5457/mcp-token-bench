@@ -92,9 +92,10 @@ export const buildCliCommand = (
   task: ExperimentTask,
   configPath: string,
 ): string => {
+  const cliBinary = process.env.MCP_CLI_BIN?.trim() || "mcp-cli";
   return [
     "NO_COLOR=1",
-    "mcp-cli",
+    cliBinary,
     "call",
     "-c",
     configPath,
@@ -106,6 +107,8 @@ export const buildCliCommand = (
 
 export class CLIAgentRunner {
   private agent: Agent;
+  private debug = process.env.DEBUG_BENCH === "1";
+  private dynamicMode: boolean;
 
   constructor(model: string | Model, systemPrompt: string) {
     const shell = new LocalShell();
@@ -132,15 +135,55 @@ export class CLIAgentRunner {
       model,
       tools: [shellCommandTool],
     });
+    this.dynamicMode = systemPrompt.includes("Available commands:");
   }
 
   async runTask(task: ExperimentTask, workflowName: string): Promise<unknown> {
-    const command = buildCliCommand(task, cliConfigPath);
+    if (!this.dynamicMode) {
+      let prompt = task.naturalLanguagePrompt;
+      const command = buildCliCommand(task, cliConfigPath);
+      if (this.debug) {
+        console.log(
+          "[bench] cli command",
+          JSON.stringify({ workflowName, command }, null, 2),
+        );
+      }
 
-    const prompt =
-      `${task.naturalLanguagePrompt}\n\n` +
-      "Use the run_shell_command tool with JSON " +
-      `{"command": "${command}"} and return only the raw JSON tool result.`;
+      prompt =
+        `${task.naturalLanguagePrompt}\n\n` +
+        "Use the run_shell_command tool with JSON " +
+        `{"command": "${command}"} and return only the raw JSON tool result.`;
+
+      const runner = new Runner({
+        workflowName,
+        traceMetadata: {
+          taskId: task.id,
+          server: task.server,
+          tool: task.tool,
+        },
+      });
+      return runner.run(this.agent, prompt, { stream: true });
+    }
+
+    const argsJson = JSON.stringify(task.args);
+    const dynamicPrompt = [
+      "Use only mcp-cli for all operations. Do not use direct shell commands like cat.",
+      "You may use: mcp-cli list-servers, list-tools, describe-tool, call.",
+      `Target server: "${task.server}". Target tool: "${task.tool}".`,
+      `You must call the tool with args JSON exactly as provided: ${argsJson}`,
+      "Use shell pipes to reduce output size.",
+      "Required: pipe through `jq -c '.'` and `head -c 5000`.",
+      "If you list tools, filter with `grep` to minimize output.",
+      "",
+      task.naturalLanguagePrompt,
+    ].join("\n");
+
+    if (this.debug) {
+      console.log(
+        "[bench] cli dynamic prompt",
+        JSON.stringify({ workflowName }, null, 2),
+      );
+    }
 
     const runner = new Runner({
       workflowName,
@@ -150,6 +193,6 @@ export class CLIAgentRunner {
         tool: task.tool,
       },
     });
-    return runner.run(this.agent, prompt);
+    return runner.run(this.agent, dynamicPrompt, { stream: true });
   }
 }

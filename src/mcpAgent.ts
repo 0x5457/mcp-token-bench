@@ -32,12 +32,23 @@ const resolveEnvMap = (
 export class MCPAgentRunner {
   private agent: Agent;
   private servers: MCPServer[] = [];
+  private debug = process.env.DEBUG_BENCH === "1";
 
   constructor(
     model: string | Model,
     servers: MCPServerConfig[],
     systemPrompt: string,
   ) {
+    const timeoutMs = Number(process.env.MCP_SERVER_TIMEOUT_MS ?? 20000);
+    const serverTimeout =
+      Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : undefined;
+    const sessionTimeoutSec = Number(
+      process.env.MCP_CLIENT_SESSION_TIMEOUT_SEC ?? 20,
+    );
+    const clientSessionTimeoutSeconds =
+      Number.isFinite(sessionTimeoutSec) && sessionTimeoutSec > 0
+        ? sessionTimeoutSec
+        : undefined;
     this.servers = servers.map((server) => {
       const toolFilter = createMCPToolStaticFilter({
         allowed: server.allowedTools,
@@ -49,6 +60,8 @@ export class MCPAgentRunner {
           args: server.args,
           env: resolveEnvMap(server.env),
           toolFilter,
+          clientSessionTimeoutSeconds,
+          timeout: serverTimeout,
         });
       }
       return new MCPServerStreamableHttp({
@@ -56,6 +69,8 @@ export class MCPAgentRunner {
         url: server.url,
         requestInit: server.headers ? { headers: server.headers } : undefined,
         toolFilter,
+        clientSessionTimeoutSeconds,
+        timeout: serverTimeout,
       });
     });
 
@@ -80,6 +95,21 @@ export class MCPAgentRunner {
   }
 
   async runTask(task: ExperimentTask, workflowName: string): Promise<unknown> {
+    if (this.debug) {
+      console.log(
+        "[bench] mcp runTask",
+        JSON.stringify(
+          {
+            workflowName,
+            server: task.server,
+            tool: task.tool,
+            args: task.args,
+          },
+          null,
+          2,
+        ),
+      );
+    }
     const runner = new Runner({
       workflowName,
       traceMetadata: {
@@ -88,6 +118,6 @@ export class MCPAgentRunner {
         tool: task.tool,
       },
     });
-    return runner.run(this.agent, task.naturalLanguagePrompt);
+    return runner.run(this.agent, task.naturalLanguagePrompt, { stream: true });
   }
 }

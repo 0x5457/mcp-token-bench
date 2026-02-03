@@ -12,6 +12,58 @@ type TraceState = TraceMetrics & {
   pendingErrorsByTool: Record<string, number>;
 };
 
+// Trace logging is on by default; set TRACE_LOG=0 to disable.
+const traceLogEnabled = (): boolean => process.env.TRACE_LOG !== "0";
+const traceLogFormat = (): "json" | "pretty" =>
+  process.env.TRACE_LOG_FORMAT === "json" ? "json" : "pretty";
+
+const previewJson = (value: unknown, limit = 2000): string | null => {
+  if (value === undefined) {
+    return null;
+  }
+  const unwrap = (input: string): string => {
+    let current = input;
+    for (let i = 0; i < 3; i += 1) {
+      const trimmed = current.trim();
+      if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+        return current;
+      }
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        current = typeof parsed === "string" ? parsed : JSON.stringify(parsed);
+      } catch {
+        return current;
+      }
+    }
+    return current;
+  };
+  let text: string;
+  if (typeof value === "string") {
+    text = unwrap(value);
+  } else {
+    try {
+      text = JSON.stringify(value);
+    } catch {
+      text = String(value);
+    }
+  }
+  if (text.length <= limit) {
+    return text;
+  }
+  return `${text.slice(0, limit)}...(${text.length - limit} more chars)`;
+};
+
+const logTrace = (label: string, payload: Record<string, unknown>): void => {
+  if (!traceLogEnabled()) {
+    return;
+  }
+  if (traceLogFormat() === "json") {
+    console.log(`[trace] ${label} ${JSON.stringify(payload)}`);
+    return;
+  }
+  console.log(`[trace] ${label}`, payload);
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
@@ -114,6 +166,13 @@ export class TraceCollector implements TracingProcessor {
     if (getStringProp(spanData, "type") === "function") {
       record.toolCallCount += 1;
       const toolName = getStringProp(spanData, "name") ?? "unknown";
+      logTrace("tool", {
+        traceId,
+        name: toolName,
+        input: previewJson(getRecordProp(spanData, "input")),
+        output: previewJson(getRecordProp(spanData, "output")),
+        error: previewJson(error),
+      });
 
       if (error) {
         record.pendingErrorsByTool[toolName] =
@@ -122,6 +181,26 @@ export class TraceCollector implements TracingProcessor {
         record.retries += 1;
         record.pendingErrorsByTool[toolName] -= 1;
       }
+      return;
+    }
+
+    const spanType = getStringProp(spanData, "type");
+    if (spanType === "model" || spanType === "llm" || spanType === "chat") {
+      const input =
+        getRecordProp(spanData, "input") ??
+        getRecordProp(spanJson, "input") ??
+        getRecordProp(spanJson, "messages");
+      const output =
+        getRecordProp(spanData, "output") ??
+        getRecordProp(spanJson, "output") ??
+        getRecordProp(spanJson, "response");
+      logTrace("model", {
+        traceId,
+        type: spanType,
+        input: previewJson(input),
+        output: previewJson(output),
+        error: previewJson(error),
+      });
     }
   }
 

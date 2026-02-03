@@ -12,7 +12,7 @@ Outputs:
 ## Requirements
 
 - Node.js 18+
-- `mcp-cli` on PATH
+- `mcp-cli` on PATH (install: `curl -fsSL https://raw.githubusercontent.com/philschmid/mcp-cli/main/install.sh | bash`)
 - MCP servers (filesystem, GitHub, search) available
 - OpenAI API key
 
@@ -69,6 +69,13 @@ npm run dev -- --models gpt-5-mini,gpt-4.1-mini
 # Use AI SDK (e.g. Anthropic / Google) models
 MODEL_PROVIDER=aisdk AI_SDK_PROVIDER=anthropic AI_SDK_MODELS=claude-3-5-sonnet-20241022 npm run dev
 MODEL_PROVIDER=aisdk AI_SDK_PROVIDER=google AI_SDK_MODELS=gemini-1.5-pro-latest npm run dev
+```
+
+Custom AI host (AI SDK):
+
+```bash
+# Shared host for any AI SDK provider
+AI_SDK_BASE_URL=https://your-host.example MODEL_PROVIDER=aisdk AI_SDK_PROVIDER=anthropic AI_SDK_MODELS=claude-3-5-sonnet-20241022 npm run dev
 ```
 
 ## Notes

@@ -10,20 +10,23 @@
       "allowedTools": ["read_file", "search_files"]
     },
     "github": {
-      "command": "npx",
-      "args": ["-y", "github-mcp-server", "--read-only"],
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "-e",
+        "GITHUB_READ_ONLY",
+        "ghcr.io/github/github-mcp-server"
+      ],
       "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}",
+        "GITHUB_READ_ONLY": "1",
+        "GITHUB_TOOLSETS": "default,git"
       },
       "allowedTools": ["get_repository_tree", "search_code"]
-    },
-    "search": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
-      "env": {
-        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
-      },
-      "allowedTools": ["brave_web_search", "brave_local_search"]
     }
   }
 }

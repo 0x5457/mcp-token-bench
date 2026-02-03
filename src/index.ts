@@ -1,9 +1,9 @@
 import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
-import { anthropic } from "@ai-sdk/anthropic";
-import { google } from "@ai-sdk/google";
-import { openai } from "@ai-sdk/openai";
+import { anthropic, createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI, google } from "@ai-sdk/google";
+import { createOpenAI, openai } from "@ai-sdk/openai";
 import {
   type Model,
   setDefaultOpenAIKey,
@@ -16,6 +16,7 @@ import {
   defaultModelList,
   defaultRunsPerTask,
   defaultServers,
+  cliConfigPath,
   resultsDir,
 } from "./config.js";
 import { ExperimentRunner } from "./experiment.js";
@@ -106,14 +107,27 @@ const writeJson = (filePath: string, data: unknown): void => {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 };
 
+const resolveAiSdkBaseUrl = (): string | undefined => {
+  const baseUrl =
+    process.env.AI_SDK_BASE_URL ?? process.env.AI_SDK_HOST ?? undefined;
+  return baseUrl?.trim() ? baseUrl.trim() : undefined;
+};
+
+const debugEnabled = (): boolean => process.env.DEBUG_BENCH === "1";
+
 const buildAiSdkModel = (provider: string, modelName: string): Model => {
+  const baseURL = resolveAiSdkBaseUrl();
   switch (provider) {
     case "openai":
-      return aisdk(openai(modelName));
+      return aisdk((baseURL ? createOpenAI({ baseURL }) : openai)(modelName));
     case "anthropic":
-      return aisdk(anthropic(modelName));
+      return aisdk(
+        (baseURL ? createAnthropic({ baseURL }) : anthropic)(modelName),
+      );
     case "google":
-      return aisdk(google(modelName));
+      return aisdk(
+        (baseURL ? createGoogleGenerativeAI({ baseURL }) : google)(modelName),
+      );
     default:
       throw new Error(
         `Unsupported AI SDK provider: ${provider}. Supported: openai, anthropic, google.`,
@@ -138,6 +152,23 @@ const buildModel = (
 const main = async (): Promise<void> => {
   const { runs, models, modelProvider, aiSdkProvider, taskFilter } =
     parseArgs();
+  if (debugEnabled()) {
+    console.log(
+      "[bench] config",
+      JSON.stringify(
+        {
+          runs,
+          models,
+          modelProvider,
+          aiSdkProvider,
+          aiSdkBaseUrl: resolveAiSdkBaseUrl() ?? null,
+          taskFilter: taskFilter ?? null,
+        },
+        null,
+        2,
+      ),
+    );
+  }
 
   const usingAiSdk = modelProvider === "aisdk" || modelProvider === "ai-sdk";
   if (!usingAiSdk) {
@@ -170,8 +201,17 @@ const main = async (): Promise<void> => {
     "Return only the raw JSON tool result and no commentary.";
 
   const cliPrompt =
-    systemPrompt +
-    " When using the run_shell_command tool, call mcp-cli with `call <server> <tool> <json>` and do not add any other commands.";
+    "You are a problem-solving assistant with access to shell commands. " +
+    "You can use mcp-cli to interact with MCP servers. " +
+    `Config file: ${cliConfigPath}\n\n` +
+    "Available commands:\n" +
+    "- mcp-cli list-servers -c <config>\n" +
+    "- mcp-cli list-tools -c <config> <server>\n" +
+    "- mcp-cli describe-tool -c <config> <server> <tool>\n" +
+    "- mcp-cli call -c <config> <server> <tool> '<json>'\n\n" +
+    "Shell tools available: grep, jq, head, tail\n" +
+    "Process: 1) Discover tools 2) Get schemas if needed 3) Call tool 4) Filter output\n" +
+    "Be efficient with tokens - use grep/jq to filter, head to limit output.";
 
   const traceCollector = new TraceCollector();
   // Keep local trace metrics and avoid exporting traces to OpenAI.
@@ -195,7 +235,11 @@ const main = async (): Promise<void> => {
 
     const cliAgent = new CLIAgentRunner(model, cliPrompt);
 
-    const runner = new ExperimentRunner(mcpAgent, cliAgent, traceCollector);
+    const runner = new ExperimentRunner(
+      mcpAgent,
+      cliAgent,
+      traceCollector,
+    );
     const runsForModel = await runner.run(filteredTasks, runs, modelId);
     allRuns.push(...runsForModel);
 
